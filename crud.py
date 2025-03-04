@@ -14,22 +14,29 @@ def create_user(db: Session, user: UserCreate):
     db.refresh(db_user)
     return db_user
 
-def create_question(db: Session, question: QuestionCreate, user_id: int):
-    db_question = Question(**question.model_dump(), user_id=user_id)
-    db.add(db_question)
+def create_card(db: Session, card: CardCreate, subject_id: int):
+    db_card = Card(**card.model_dump(), subject_id=subject_id)
+    db.add(db_card)
     db.commit()
-    db.refresh(db_question)
-    return db_question
+    db.refresh(db_card)
+    return db_card
 
-def create_answer(db: Session, answer: AnswerCreate, question_id: int):
-    db_answer = Answer(**answer.dict(), question_id=question_id)
+def get_cards_by_subject(db: Session, subject_id: int, skip: int = 0, limit: int = 100):
+    return db.query(Card).filter(Card.subject_id == subject_id).offset(skip).limit(limit).all()
+
+def create_correct_answer(db: Session, answer: CorrectAnswerCreate, card_id: int):
+    db_answer = CorrectAnswer(**answer.model_dump(), card_id=card_id)
     db.add(db_answer)
     db.commit()
     db.refresh(db_answer)
     return db_answer
 
-def get_questions_by_user(db: Session, user_id: int, skip: int = 0, limit: int = 100):
-    return db.query(Question).filter(Question.user_id == user_id).offset(skip).limit(limit).all()
+def create_definition(db: Session, definition: DefinitionCreate, card_id: int):
+    db_definition = Definition(**definition.model_dump(), card_id=card_id)
+    db.add(db_definition)
+    db.commit()
+    db.refresh(db_definition)
+    return db_definition
 
 def schedule_review(db: Session, review: ReviewScheduleCreate):
     db_review = ReviewSchedule(**review.dict())
