@@ -8,6 +8,7 @@ from PIL import Image
 import openai
 import os
 from dotenv import load_dotenv
+from docx import Document
 
 from models import Base, User, Question, Answer, ReviewSchedule
 from schemas import UserCreate, UserLogin, QuestionCreate, AnswerCreate
@@ -62,7 +63,6 @@ def import_questions(file: UploadFile = File(...), db: Session = Depends(get_db)
         content = file.file.read().decode("utf-8")
         questions = [line.strip() for line in content.split("\n") if line.strip()]
     elif file.filename.endswith(".docx"):
-        from docx import Document
         doc = Document(file.file)
         questions = [para.text for para in doc.paragraphs if para.text.strip()]
     else:
@@ -104,3 +104,5 @@ def start_review(question_id: int, db: Session = Depends(get_db)):
     return {"message": "Review scheduled"}
 
 load_dotenv()
+
+DATABASE_URL = os.getenv("DATABASE_URL")  # Ensure this is set correctly
