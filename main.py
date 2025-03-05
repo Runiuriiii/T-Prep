@@ -89,6 +89,27 @@ def import_questions(file: UploadFile = File(...), db: Session = Depends(get_db)
     return {"message": f"Imported {len(questions)} questions"}
 
 
+@app.post("/generate-answer")
+def generate_answer(question_id: int, db: Session = Depends(get_db)):
+    question = db.query(Question).filter(Question.id == question_id).first()
+    if not question:
+        raise HTTPException(status_code=404, detail="Question not found")
+    response = client.chat.completions.create(
+        model="deepseek/deepseek-chat:free",
+        messages=[
+            {
+                "role": "user",
+                "content": f"{question.question_text}. Напиши кратко, не более 50 слов."
+
+            }
+        ]
+    )
+    answer_text = response.choices[0].message.content
+    print(answer_text)
+    create_answer(db, answer=AnswerCreate(answer_text=answer_text), question_id=question_id)
+    return {"answer": answer_text}
+
+
 # Распознавание текста с изображения
 @app.post("/ocr")
 def ocr(image: UploadFile = File(...)):
