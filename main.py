@@ -41,6 +41,7 @@ app.add_middleware(
     allow_headers=['*']
 )
 
+
 # Зависимость для получения сессии БД
 def get_db():
     db = SessionLocal()
@@ -48,6 +49,7 @@ def get_db():
         yield db
     finally:
         db.close()
+
 
 # Регистрация пользователя
 @app.post("/register")
@@ -59,6 +61,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     db_user = create_user(db, user=user)
     return {"message": "User created successfully", "success": True}
 
+
 # Аутентификация
 @app.post("/token")
 def login(user: UserLogin, db: Session = Depends(get_db)):
@@ -67,6 +70,7 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Incorrect email or password")
     access_token = create_access_token(data={"sub": db_user.email})
     return {"access_token": access_token, "token_type": "bearer", "success": True}
+
 
 # Импорт вопросов из файла
 @app.post("/import-questions")
@@ -84,27 +88,6 @@ def import_questions(file: UploadFile = File(...), db: Session = Depends(get_db)
         create_question(db, question=QuestionCreate(question_text=question_text), user_id=1)  # Нужно передавать ID текущего пользователя
     return {"message": f"Imported {len(questions)} questions"}
 
-# Генерация ответа через ChatGPT
-@app.post("/generate-answer")
-def generate_answer(question_id: int, db: Session = Depends(get_db)):
-    question = db.query(Question).filter(Question.id == question_id).first()
-    if not question:
-        raise HTTPException(status_code=404, detail="Question not found")
-    response = client.chat.completions.create(
-        model="deepseek/deepseek-chat:free",
-        messages=[
-            {
-                "role": "user",
-                "content": f"{question.question_text}. Сделай ответ строго ограниченный в 200 токенов."
-
-            }
-        ],
-        max_tokens=200
-    )
-    answer_text = response.choices[0].message.content
-    print(answer_text)
-    create_answer(db, answer=AnswerCreate(answer_text=answer_text), question_id=question_id)
-    return {"answer": answer_text}
 
 # Распознавание текста с изображения
 @app.post("/ocr")
@@ -112,6 +95,7 @@ def ocr(image: UploadFile = File(...)):
     img = Image.open(image.file)
     text = pytesseract.image_to_string(img)
     return {"text": text}
+
 
 # Логика интервальных повторений
 @app.post("/start-review")
@@ -122,6 +106,7 @@ def start_review(question_id: int, db: Session = Depends(get_db)):
             (question_id, interval), countdown=interval
         )
     return {"message": "Review scheduled"}
+
 
 load_dotenv()
 
