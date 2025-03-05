@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from fastapi.middleware.cors import CORSMiddleware
 import pytesseract
 from PIL import Image
-import openai
+from openai import OpenAI
 import os
 from dotenv import load_dotenv
 from docx import Document
@@ -20,14 +20,16 @@ from utils import get_password_hash, verify_password, create_access_token
 from tasks import schedule_notification
 
 #Настройки
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=os.getenv("OPENAI_API_KEY")
+)
 
 app = FastAPI()
 
 # Создание таблиц в БД
 Base.metadata.create_all(bind=engine)
-# client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), base_url="https://api.deepseek.com/v1")
-openai.api_key = os.getenv("OPENAI_API_KEY")
-openai.api_base = "https://api.deepseek.com/v1"
+
 
 origins = ['*']
 
@@ -88,11 +90,19 @@ def generate_answer(question_id: int, db: Session = Depends(get_db)):
     question = db.query(Question).filter(Question.id == question_id).first()
     if not question:
         raise HTTPException(status_code=404, detail="Question not found")
-    response = openai.Completion.create(
-        model="deepseek-r1-free", # поменять модель
-        prompt=question.question_text
+    response = client.chat.completions.create(
+        model="deepseek/deepseek-chat:free",
+        messages=[
+            {
+                "role": "user",
+                "content": f"{question.question_text}. Сделай ответ строго ограниченный в 200 токенов."
+
+            }
+        ],
+        max_tokens=200
     )
-    answer_text = response.choices[0].text
+    answer_text = response.choices[0].message.content
+    print(answer_text)
     create_answer(db, answer=AnswerCreate(answer_text=answer_text), question_id=question_id)
     return {"answer": answer_text}
 
