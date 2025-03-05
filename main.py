@@ -1,14 +1,14 @@
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
-from typing import List
+from fastapi.middleware.cors import CORSMiddleware
 import pytesseract
 from PIL import Image
 import openai
 import os
 from dotenv import load_dotenv
 from docx import Document
+import requests
 
 from models import Base, User, Question, Answer, ReviewSchedule
 from schemas import UserCreate, UserLogin, QuestionCreate, AnswerCreate
@@ -29,6 +29,16 @@ app = FastAPI()
 # Создание таблиц в БД
 Base.metadata.create_all(bind=engine)
 
+origins = ['*']
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=['*'],
+    allow_headers=['*']
+)
+
 # Зависимость для получения сессии БД
 def get_db():
     db = SessionLocal()
@@ -45,16 +55,16 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Email already registered")
     hashed_password = get_password_hash(user.password)
     db_user = create_user(db, user=user)
-    return {"message": "User created successfully"}
+    return {"message": "User created successfully", "success": True}
 
 # Аутентификация
 @app.post("/token")
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    db_user = get_user_by_email(db, email=form_data.username)
-    if not db_user or not verify_password(form_data.password, db_user.hashed_password):
+def login(user: UserLogin, db: Session = Depends(get_db)):
+    db_user = get_user_by_email(db, email=user.email)
+    if not db_user or not verify_password(user.password, db_user.hashed_password):
         raise HTTPException(status_code=400, detail="Incorrect email or password")
     access_token = create_access_token(data={"sub": db_user.email})
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {"access_token": access_token, "token_type": "bearer", "success": True}
 
 # Импорт вопросов из файла
 @app.post("/import-questions")
@@ -69,7 +79,7 @@ def import_questions(file: UploadFile = File(...), db: Session = Depends(get_db)
         raise HTTPException(status_code=400, detail="Unsupported file format")
 
     for question_text in questions:
-        create_question(db, question_text=question_text, user_id=1)  # Нужно передавать ID текущего пользователя
+        create_question(db, question=QuestionCreate(question_text=question_text), user_id=1)  # Нужно передавать ID текущего пользователя
     return {"message": f"Imported {len(questions)} questions"}
 
 # Генерация ответа через ChatGPT
@@ -83,7 +93,7 @@ def generate_answer(question_id: int, db: Session = Depends(get_db)):
         messages=[{"role": "user", "content": question.question_text}]
     )
     answer_text = response.choices[0].message.content
-    create_answer(db, question_id=question_id, answer_text=answer_text)
+    create_answer(db, answer=AnswerCreate(answer_text=answer_text), question_id=question_id)
     return {"answer": answer_text}
 
 # Распознавание текста с изображения
