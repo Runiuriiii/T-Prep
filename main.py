@@ -20,13 +20,14 @@ from utils import get_password_hash, verify_password, create_access_token
 from tasks import schedule_notification
 
 #Настройки
-openai.api_key = os.getenv("OPENAI_API_KEY")  # Использовать переменную окружения
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 app = FastAPI()
 
 # Создание таблиц в БД
 Base.metadata.create_all(bind=engine)
+# client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), base_url="https://api.deepseek.com/v1")
+openai.api_key = os.getenv("OPENAI_API_KEY")
+openai.api_base = "https://api.deepseek.com/v1"
 
 origins = ['*']
 
@@ -87,11 +88,11 @@ def generate_answer(question_id: int, db: Session = Depends(get_db)):
     question = db.query(Question).filter(Question.id == question_id).first()
     if not question:
         raise HTTPException(status_code=404, detail="Question not found")
-    response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        messages=[{"role": "user", "content": question.question_text}]
+    response = openai.Completion.create(
+        model="deepseek-r1-free", # поменять модель
+        prompt=question.question_text
     )
-    answer_text = response.choices[0].message.content
+    answer_text = response.choices[0].text
     create_answer(db, answer=AnswerCreate(answer_text=answer_text), question_id=question_id)
     return {"answer": answer_text}
 
