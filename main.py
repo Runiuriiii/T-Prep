@@ -8,7 +8,6 @@ import openai
 import os
 from dotenv import load_dotenv
 from docx import Document
-import requests
 
 from models import Base, User, Question, Answer, ReviewSchedule
 from schemas import UserCreate, UserLogin, QuestionCreate, AnswerCreate
