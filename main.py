@@ -1,11 +1,10 @@
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
-from typing import List
+from fastapi.middleware.cors import CORSMiddleware
 import pytesseract
 from PIL import Image
-import openai
+from openai import OpenAI
 import os
 from dotenv import load_dotenv
 from docx import Document
@@ -21,13 +20,27 @@ from utils import get_password_hash, verify_password, create_access_token
 from tasks import schedule_notification
 
 #Настройки
-openai.api_key = os.getenv("OPENAI_API_KEY")  # Использовать переменную окружения
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=os.getenv("OPENAI_API_KEY")
+)
 
 app = FastAPI()
 
 # Создание таблиц в БД
 Base.metadata.create_all(bind=engine)
+
+
+origins = ['*']
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=['*'],
+    allow_headers=['*']
+)
+
 
 # Зависимость для получения сессии БД
 def get_db():
@@ -37,6 +50,7 @@ def get_db():
     finally:
         db.close()
 
+
 # Регистрация пользователя
 @app.post("/register")
 def register(user: UserCreate, db: Session = Depends(get_db)):
@@ -44,17 +58,19 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     if db_user:
         raise HTTPException(status_code=400, detail="Email already registered")
     hashed_password = get_password_hash(user.password)
-    db_user = create_user(db, email=user.email, hashed_password=hashed_password)
-    return {"message": "User created successfully"}
+    db_user = create_user(db, user=user)
+    return {"message": "User created successfully", "success": True}
+
 
 # Аутентификация
 @app.post("/token")
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    db_user = get_user_by_email(db, email=form_data.username)
-    if not db_user or not verify_password(form_data.password, db_user.hashed_password):
+def login(user: UserLogin, db: Session = Depends(get_db)):
+    db_user = get_user_by_email(db, email=user.email)
+    if not db_user or not verify_password(user.password, db_user.hashed_password):
         raise HTTPException(status_code=400, detail="Incorrect email or password")
     access_token = create_access_token(data={"sub": db_user.email})
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {"access_token": access_token, "token_type": "bearer", "success": True}
+
 
 # Импорт вопросов из файла
 @app.post("/import-questions")
@@ -69,22 +85,30 @@ def import_questions(file: UploadFile = File(...), db: Session = Depends(get_db)
         raise HTTPException(status_code=400, detail="Unsupported file format")
 
     for question_text in questions:
-        create_question(db, question_text=question_text, user_id=1)  # Нужно передавать ID текущего пользователя
+        create_question(db, question=QuestionCreate(question_text=question_text), user_id=1)  # Нужно передавать ID текущего пользователя
     return {"message": f"Imported {len(questions)} questions"}
 
-# Генерация ответа через ChatGPT
+
 @app.post("/generate-answer")
 def generate_answer(question_id: int, db: Session = Depends(get_db)):
     question = db.query(Question).filter(Question.id == question_id).first()
     if not question:
         raise HTTPException(status_code=404, detail="Question not found")
-    response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        messages=[{"role": "user", "content": question.question_text}]
+    response = client.chat.completions.create(
+        model="deepseek/deepseek-chat:free",
+        messages=[
+            {
+                "role": "user",
+                "content": f"{question.question_text}. Напиши кратко, не более 50 слов."
+
+            }
+        ]
     )
     answer_text = response.choices[0].message.content
-    create_answer(db, question_id=question_id, answer_text=answer_text)
+    print(answer_text)
+    create_answer(db, answer=AnswerCreate(answer_text=answer_text), question_id=question_id)
     return {"answer": answer_text}
+
 
 # Распознавание текста с изображения
 @app.post("/ocr")
@@ -92,6 +116,7 @@ def ocr(image: UploadFile = File(...)):
     img = Image.open(image.file)
     text = pytesseract.image_to_string(img)
     return {"text": text}
+
 
 # Логика интервальных повторений
 @app.post("/start-review")
@@ -102,6 +127,7 @@ def start_review(question_id: int, db: Session = Depends(get_db)):
             (question_id, interval), countdown=interval
         )
     return {"message": "Review scheduled"}
+
 
 load_dotenv()
 
